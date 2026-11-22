@@ -28,18 +28,7 @@ const TYPES = [
   'style',
   'revert',
 ];
-const SCOPES = [
-  'web',
-  'api',
-  'worker',
-  'packages',
-  'infra',
-  'db',
-  'ci',
-  'release',
-  'deps',
-  'repo',
-];
+const SCOPES = ['web', 'api', 'worker', 'packages', 'infra', 'db', 'ci', 'release', 'deps', 'repo'];
 const HEADER_MAX = 100;
 
 const msgPath = process.argv[2];
@@ -85,7 +74,9 @@ if (!bypass) {
       errors.push(`Type "${type}" is not allowed. Use one of: ${TYPES.join(', ')}.`);
     }
     if (scope && !SCOPES.includes(scope)) {
-      errors.push(`Scope "${scope}" is not allowed. Use one of: ${SCOPES.join(', ')} (or omit it).`);
+      errors.push(
+        `Scope "${scope}" is not allowed. Use one of: ${SCOPES.join(', ')} (or omit it).`,
+      );
     }
     if (!subject || subject.trim().length === 0) {
       errors.push('Subject must not be empty.');

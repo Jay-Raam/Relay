@@ -164,7 +164,8 @@ function render() {
   }
 
   const authors = [...new Set(commits.map((c) => c.author))].sort();
-  if (authors.length) out.push(`### 👥 Contributors`, '', authors.map((a) => `- ${a}`).join('\n'), '');
+  if (authors.length)
+    out.push(`### 👥 Contributors`, '', authors.map((a) => `- ${a}`).join('\n'), '');
 
   return out.join('\n');
 }
@@ -211,5 +212,7 @@ if (process.env.GITHUB_STEP_SUMMARY) {
 
 // ---- console summary ------------------------------------------------------
 if (!stdoutOnly) {
-  console.error(`Previous: ${fromRef || '(none)'}  →  Next: ${tag}  (bump: ${bump}, commits: ${commits.length})`);
+  console.error(
+    `Previous: ${fromRef || '(none)'}  →  Next: ${tag}  (bump: ${bump}, commits: ${commits.length})`,
+  );
 }

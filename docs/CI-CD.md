@@ -11,11 +11,11 @@ Three workflows, plus local git hooks that catch problems before they ever reach
 Activated by `pnpm install` (initialises Husky) **plus** a one-time copy of the
 hook sources into `.husky/` — see [One-time setup](#one-time-setup) below.
 
-| Hook         | Runs                                                  | Blocks when…                              |
-| ------------ | ----------------------------------------------------- | ----------------------------------------- |
-| `commit-msg` | `scripts/validate-commit-msg.mjs`                     | the commit message isn't a valid Conventional Commit |
+| Hook         | Runs                                                        | Blocks when…                                               |
+| ------------ | ----------------------------------------------------------- | ---------------------------------------------------------- |
+| `commit-msg` | `scripts/validate-commit-msg.mjs`                           | the commit message isn't a valid Conventional Commit       |
 | `pre-commit` | `scripts/pre-commit.mjs` — format → lint → typecheck → test | any lint **error or warning**, type error, or failing test |
-| `pre-push`   | `scripts/pre-push.mjs` → full `verify` (+ build)      | the full suite fails                       |
+| `pre-push`   | `scripts/pre-push.mjs` → full `verify` (+ build)            | the full suite fails                                       |
 
 Each gate **skips cleanly** when its tooling isn't installed yet, so the first
 commit of a fresh clone works; once `pnpm install` has run, every gate is live.

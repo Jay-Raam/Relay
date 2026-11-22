@@ -32,7 +32,7 @@ jobs:
       - name: Build images
         run: |
           echo "TODO: build per-service images from infra/docker/*"
-          echo "e.g. docker buildx build -f infra/docker/api.Dockerfile -t \$REGISTRY/iot-pulse-api:${{ github.ref_name }} --push ."
+          echo "e.g. docker buildx build -f infra/docker/api.Dockerfile -t \$REGISTRY/relay-api:${{ github.ref_name }} --push ."
 
   deploy-staging:
     name: Rolling deploy → staging
@@ -40,7 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: staging
-      url: https://staging.iot-pulse.example.com
+      url: https://staging.relay.example.com
     steps:
       - uses: actions/checkout@v4
       - name: Rolling deploy (one node at a time, behind health checks)
@@ -62,7 +62,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Run smoke tests against staging
         env:
-          SMOKE_BASE_URL: https://staging.iot-pulse.example.com
+          SMOKE_BASE_URL: https://staging.relay.example.com
         run: |
           echo "TODO: pnpm turbo run test:smoke (health, one query, one command round-trip)"
 
@@ -74,7 +74,7 @@ jobs:
     # repo settings → Environments, so promotion is a human gate.
     environment:
       name: production
-      url: https://iot-pulse.example.com
+      url: https://relay.example.com
     steps:
       - uses: actions/checkout@v4
       - name: Rolling deploy → production

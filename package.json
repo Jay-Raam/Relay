@@ -1,8 +1,8 @@
 {
-  "name": "iot-pulse",
+  "name": "relay",
   "version": "0.1.0",
   "private": true,
-  "description": "IoT Pulse — real-time MQTT IoT monitoring platform (Next.js + GraphQL Yoga + MQTT worker).",
+  "description": "Real-time MQTT IoT telemetry platform — Next.js dashboard, GraphQL Yoga API, MQTT ingestion worker, PostgreSQL + TimescaleDB. Low failure rate, fast APIs.",
   "packageManager": "pnpm@9.12.3",
   "engines": {
     "node": ">=20.0.0",
