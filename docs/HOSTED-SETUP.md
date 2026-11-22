@@ -43,15 +43,17 @@ Use `mqtts://` and port `8883` (TLS). Plain `mqtt://` on 1883 is not available o
 
 ## 3. Run the pipeline
 
-Open three terminals in the repo root:
+Open four terminals in the repo root:
 
 ```powershell
 pnpm --filter @relay/worker start           # subscribes, validates, inserts
 pnpm --filter @relay/mock-publisher start   # publishes a fake temperature every 2s
 pnpm --filter @relay/api start              # GraphQL at http://localhost:4000/graphql
+pnpm --filter @relay/web dev                # dashboard at http://localhost:3000
 ```
 
-The worker logs a line per stored reading. In GraphiQL (`/graphql`) run:
+The worker logs a line per stored reading. Open <http://localhost:3000>: the chart fills in
+and the status pill turns green (**Live**). To query the API directly, open GraphiQL at <http://localhost:4000/graphql> and run:
 
 ```graphql
 {
