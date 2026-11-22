@@ -1,0 +1,14 @@
+{
+  "name": "@relay/db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "migrate": "node migrate.mjs",
+    "seed": "node migrate.mjs --seed",
+    "migrate:seed": "node migrate.mjs --seed"
+  },
+  "dependencies": {
+    "pg": "^8.13.1"
+  }
+}
