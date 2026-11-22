@@ -1,8 +1,13 @@
-# IoT Pulse
+# Relay
 
-Real-time MQTT IoT monitoring platform — Next.js + shadcn/ui frontend, GraphQL
-Yoga + Node.js backend, PostgreSQL + TimescaleDB. Built for low failure rate and
-fast APIs. See the architecture guide for the full design.
+Relay ingests device telemetry over MQTT, stores it as time-series, and serves it
+to a live dashboard through a GraphQL API — with real-time updates and device
+command control. Three independent paths (ingest, query, command) so a telemetry
+flood never slows the dashboard.
+
+Next.js + shadcn/ui frontend, GraphQL Yoga + Node.js backend, PostgreSQL +
+TimescaleDB. Built for low failure rate and fast APIs. See the architecture guide
+for the full design.
 
 This repository is a **Turborepo + pnpm monorepo**:
 
@@ -46,16 +51,16 @@ Requires **Node ≥ 20** and **pnpm ≥ 9** (`.nvmrc` pins the Node version).
 
 ## Everyday commands
 
-| Command                 | What it does                                             |
-| ----------------------- | -------------------------------------------------------- |
-| `pnpm lint`             | Lint all packages (0 warnings allowed)                   |
-| `pnpm typecheck`        | Type-check all packages                                  |
-| `pnpm test`             | Run unit tests                                           |
-| `pnpm build`            | Build all packages                                       |
-| `pnpm verify`           | Full suite: format → lint → typecheck → test → build     |
-| `pnpm format`           | Format the repo with Prettier                            |
-| `pnpm commit`           | Guided Conventional Commit prompt (Commitizen)           |
-| `pnpm release:notes`    | Preview the next version + release notes                 |
+| Command              | What it does                                         |
+| -------------------- | ---------------------------------------------------- |
+| `pnpm lint`          | Lint all packages (0 warnings allowed)               |
+| `pnpm typecheck`     | Type-check all packages                              |
+| `pnpm test`          | Run unit tests                                       |
+| `pnpm build`         | Build all packages                                   |
+| `pnpm verify`        | Full suite: format → lint → typecheck → test → build |
+| `pnpm format`        | Format the repo with Prettier                        |
+| `pnpm commit`        | Guided Conventional Commit prompt (Commitizen)       |
+| `pnpm release:notes` | Preview the next version + release notes             |
 
 ## How commits are protected
 
