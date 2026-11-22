@@ -1,0 +1,12 @@
+{
+  "name": "@relay/mock-publisher",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node mock-publisher.mjs"
+  },
+  "dependencies": {
+    "mqtt": "^5.10.1"
+  }
+}
