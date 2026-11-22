@@ -16,7 +16,7 @@ apps/web        # Next.js frontend
 apps/api        # GraphQL Yoga server
 apps/worker     # MQTT ingestion worker
 packages/*      # shared types, config, env
-infra/*         # docker, compose, nginx, observability
+infra/*         # dev scripts (mock publisher), hosting config
 ```
 
 ## Getting started
@@ -28,8 +28,11 @@ Copy-Item ci\husky\* .husky\ -Force       # activate the commit/push hooks
 New-Item -ItemType Directory -Force .github\workflows | Out-Null
 Copy-Item ci\workflows\* .github\workflows\ -Force      # install CI/CD workflows
 Copy-Item ci\pull_request_template.md .github\ -Force
-Copy-Item .env.example .env
+Copy-Item .env.example .env               # then fill in the hosted DB + MQTT credentials
 ```
+
+No Docker needed: Relay uses a hosted TimescaleDB and a hosted MQTT broker. Follow
+**[docs/HOSTED-SETUP.md](docs/HOSTED-SETUP.md)** to create them and fill in `.env`.
 
 macOS/Linux equivalent:
 
@@ -77,11 +80,12 @@ still enforce the same checks on the pull request.
 
 ## CI/CD
 
-The full pipeline — CI on every PR/push, release notes on every push, and a
-staging→prod rolling deploy — is documented in **[docs/CI-CD.md](docs/CI-CD.md)**.
+The full pipeline — CI on every PR/push and release notes on every push — is
+documented in **[docs/CI-CD.md](docs/CI-CD.md)**.
 
 ## Documentation
 
+- [docs/HOSTED-SETUP.md](docs/HOSTED-SETUP.md) — hosted TimescaleDB + MQTT setup, running the stack
 - [docs/CI-CD.md](docs/CI-CD.md) — pipeline, hooks, release automation
 - [docs/COMMIT_CONVENTION.md](docs/COMMIT_CONVENTION.md) — commit format + examples
 - [CHANGELOG.md](CHANGELOG.md) — generated from commits

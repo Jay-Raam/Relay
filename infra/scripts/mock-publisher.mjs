@@ -6,17 +6,27 @@
  *
  *   node mock-publisher.mjs
  *
- * Env: MQTT_URL (default mqtt://localhost:1883), DEVICE_ID (default dev-001),
- *      INTERVAL_MS (default 2000).
+ * Env (read from the repo-root .env, real env vars win): MQTT_URL, MQTT_USERNAME,
+ *      MQTT_PASSWORD, DEVICE_ID (default dev-001), INTERVAL_MS (default 2000).
  */
 import mqtt from 'mqtt';
+
+// Load the repo-root .env (Node >= 20.12). Existing env vars are not overridden.
+try {
+  process.loadEnvFile(new URL('../../.env', import.meta.url));
+} catch {
+  // no .env — fall back to real env vars / defaults
+}
 
 const url = process.env.MQTT_URL || 'mqtt://localhost:1883';
 const deviceId = process.env.DEVICE_ID || 'dev-001';
 const intervalMs = Number(process.env.INTERVAL_MS || 2000);
 const topic = `devices/${deviceId}/telemetry`;
 
-const client = mqtt.connect(url);
+const client = mqtt.connect(url, {
+  username: process.env.MQTT_USERNAME || undefined,
+  password: process.env.MQTT_PASSWORD || undefined,
+});
 
 client.on('connect', () => {
   console.log(`mock-publisher connected to ${url}`);

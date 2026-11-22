@@ -2,9 +2,9 @@
 
 Implements the guide's flow:
 
-> Lint + typecheck → unit tests → build images → integration tests → push → rolling deploy to staging → smoke tests → promote to prod. Every merge to main is deployable.
+> Format → lint → typecheck → unit tests → build, on every PR and push, plus release notes on every push. Every merge to main must be green. (Image builds and deploy workflows come later, when there is a hosting target.)
 
-Three workflows, plus local git hooks that catch problems before they ever reach CI.
+Two workflows, plus local git hooks that catch problems before they ever reach CI.
 
 ## Local gates (git hooks, via Husky)
 
@@ -25,8 +25,9 @@ Lint runs with zero warnings allowed — warnings block the commit, not just err
 
 - **commit-lint** (PRs) — validates every commit in the PR with commitlint.
 - **verify** — format check → lint → typecheck → unit tests → build.
-- **integration** — spins up the docker-compose stack (Postgres/Timescale, Redis,
-  Mosquitto) and runs integration tests. Skips gracefully until `infra/compose` exists.
+
+Integration tests against the hosted services are not part of CI yet; unit tests use
+fakes, so CI needs no database or broker.
 
 ## `release.yml` — version + release notes on **every push**
 
@@ -44,14 +45,6 @@ pnpm release:notes:bump     # also write the new version into package.json
 node scripts/generate-release-notes.mjs --stdout   # print only
 ```
 
-## `deploy.yml` — on release published
-
-`build & push images → rolling deploy to staging → smoke tests → promote to prod`.
-Staging and production are GitHub **Environments** — add a required reviewer to
-`production` so promotion is a human gate. The deploy/smoke steps are marked
-`TODO` for your infra commands (kubectl/Helm/compose). Rollouts are one node at a
-time behind health checks, with expand–migrate–contract DB migrations.
-
 ## One-time setup
 
 The canonical hook and workflow sources are committed under **`ci/`**. You copy
@@ -59,7 +52,7 @@ them into the directories git and GitHub read from, once:
 
 ```
 ci/husky/{commit-msg,pre-commit,pre-push}   → .husky/
-ci/workflows/{ci,release,deploy}.yml        → .github/workflows/
+ci/workflows/{ci,release}.yml               → .github/workflows/
 ci/pull_request_template.md                 → .github/pull_request_template.md
 ```
 
