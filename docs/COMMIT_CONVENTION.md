@@ -21,19 +21,19 @@ type(scope): subject
 
 ## Types → version bump
 
-| Type       | Meaning                                   | Version bump |
-| ---------- | ----------------------------------------- | ------------ |
-| `feat`     | A new feature                             | **minor**    |
-| `fix`      | A bug fix                                 | **patch**    |
-| `perf`     | A performance improvement                 | **patch**    |
-| `refactor` | Neither fixes a bug nor adds a feature    | patch        |
-| `revert`   | Reverts a previous commit                 | patch        |
-| `docs`     | Documentation only                        | —            |
-| `test`     | Adding or fixing tests                    | —            |
-| `build`    | Build system or dependencies              | —            |
-| `ci`       | CI configuration                          | —            |
-| `chore`    | Maintenance, tooling                      | —            |
-| `style`    | Formatting, no code change                | —            |
+| Type       | Meaning                                | Version bump |
+| ---------- | -------------------------------------- | ------------ |
+| `feat`     | A new feature                          | **minor**    |
+| `fix`      | A bug fix                              | **patch**    |
+| `perf`     | A performance improvement              | **patch**    |
+| `refactor` | Neither fixes a bug nor adds a feature | patch        |
+| `revert`   | Reverts a previous commit              | patch        |
+| `docs`     | Documentation only                     | —            |
+| `test`     | Adding or fixing tests                 | —            |
+| `build`    | Build system or dependencies           | —            |
+| `ci`       | CI configuration                       | —            |
+| `chore`    | Maintenance, tooling                   | —            |
+| `style`    | Formatting, no code change             | —            |
 
 A `!` after the type/scope, or a `BREAKING CHANGE:` footer, forces a **major** bump.
 
