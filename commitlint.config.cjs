@@ -41,7 +41,7 @@ module.exports = {
         'api', // apps/api   — GraphQL Yoga server
         'worker', // apps/worker — MQTT ingestion
         'packages', // shared types / config / env
-        'infra', // docker, compose, nginx, observability
+        'infra', // scripts, hosting config, observability
         'db', // migrations, schema
         'ci', // pipelines, workflows
         'release', // release tooling, changelog

@@ -1,6 +1,6 @@
 name: CI
 
-# Lint + typecheck → unit tests → build → integration tests.
+# Format → lint → typecheck → unit tests → build.
 # Runs on every pull request and every push. Every merge to main must be green.
 
 on:
@@ -64,36 +64,3 @@ jobs:
 
       - name: Build
         run: pnpm build
-
-  integration:
-    name: Integration tests
-    needs: verify
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .nvmrc
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-
-      # Spin up the dev stack (Postgres/Timescale + Redis + Mosquitto) if present.
-      - name: Start stack (docker compose)
-        id: stack
-        run: |
-          if [ -f infra/compose/docker-compose.yml ]; then
-            docker compose -f infra/compose/docker-compose.yml up -d --wait
-            echo "started=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "No compose file yet — skipping integration stack."
-            echo "started=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Run integration tests
-        if: steps.stack.outputs.started == 'true'
-        run: pnpm turbo run test:integration
-
-      - name: Tear down
-        if: always() && steps.stack.outputs.started == 'true'
-        run: docker compose -f infra/compose/docker-compose.yml down -v

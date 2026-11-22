@@ -5,7 +5,11 @@ import { insertTelemetry, closeDb } from './db';
 
 const TOPIC = 'devices/+/telemetry';
 
-const client = mqtt.connect(config.MQTT_URL);
+// Hosted brokers (HiveMQ Cloud) need TLS + credentials; empty values mean anonymous.
+const client = mqtt.connect(config.MQTT_URL, {
+  username: config.MQTT_USERNAME || undefined,
+  password: config.MQTT_PASSWORD || undefined,
+});
 
 client.on('connect', () => {
   console.log(`worker connected to ${config.MQTT_URL}`);
