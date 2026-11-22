@@ -1,0 +1,66 @@
+name: Release notes
+
+# Generates version + release notes on EVERY push.
+#   - Any branch: notes are written to the run summary and uploaded as an artifact.
+#   - main:       if the computed version is new, a git tag and GitHub Release are created.
+
+on:
+  push:
+    branches: ['**']
+    tags-ignore: ['**'] # don't re-run when we push our own tag
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write # create tags and GitHub Releases
+
+jobs:
+  release-notes:
+    name: Generate release notes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history + tags for the changelog range
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      # Zero-dependency generator — no install needed. Writes RELEASE_NOTES.md,
+      # updates CHANGELOG.md, and exports version/tag/changed to the job outputs.
+      - name: Compute version & notes
+        id: notes
+        run: node scripts/generate-release-notes.mjs
+
+      - name: Upload release notes artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes-${{ steps.notes.outputs.tag }}
+          path: |
+            RELEASE_NOTES.md
+            CHANGELOG.md
+          if-no-files-found: warn
+
+      # ---- Tag + GitHub Release (main only, when the version is new) --------
+      - name: Create tag & GitHub Release
+        if: >-
+          (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+          && steps.notes.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.notes.outputs.tag }}
+        run: |
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "Tag $TAG already exists — nothing to release."
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+          gh release create "$TAG" --title "$TAG" --notes-file RELEASE_NOTES.md
+          echo "Released $TAG"
