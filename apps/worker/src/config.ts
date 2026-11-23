@@ -24,6 +24,8 @@ const schema = z.object({
   MQTT_URL: z.string().default('mqtt://localhost:1883'),
   MQTT_USERNAME: z.string().optional(),
   MQTT_PASSWORD: z.string().optional(),
+  // Optional: without Redis the worker still stores readings; it just skips cache + live push.
+  REDIS_URL: z.string().optional(),
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
   LOG_LEVEL: z.string().default('info'),
 });
