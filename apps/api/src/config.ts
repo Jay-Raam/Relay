@@ -24,6 +24,8 @@ const schema = z.object({
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
   PORT: z.coerce.number().int().positive().default(4000),
   WEB_ORIGIN: z.string().default('http://localhost:3000'),
+  // Optional: without Redis, `latest` reads the database and live push is off (clients poll).
+  REDIS_URL: z.string().optional(),
 });
 
 // Validate env on boot — a missing/bad var crashes at startup, not at 2am.

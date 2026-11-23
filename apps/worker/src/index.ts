@@ -1,9 +1,12 @@
 import mqtt from 'mqtt';
+import { createCache } from '@relay/cache';
 import { config } from './config';
 import { parseTelemetry } from './handler';
 import { insertTelemetry, closeDb } from './db';
 
 const TOPIC = 'devices/+/telemetry';
+
+const cache = createCache(config.REDIS_URL || undefined);
 
 // Hosted brokers (HiveMQ Cloud) need TLS + credentials; empty values mean anonymous.
 const client = mqtt.connect(config.MQTT_URL, {
@@ -26,10 +29,13 @@ client.on('message', (topic, payload) => {
     console.warn(`dropped message on ${topic}: ${result.error}`);
     return;
   }
-  insertTelemetry(result.reading)
-    .then(() => {
-      const r = result.reading;
-      console.log(`✓ ${r.deviceId} ${r.metric}=${r.value}`);
+  const reading = result.reading;
+  insertTelemetry(reading)
+    .then(async () => {
+      console.log(`✓ ${reading.deviceId} ${reading.metric}=${reading.value}`);
+      // After the durable write: refresh the latest-value cache and notify live viewers.
+      // Never throws — a Redis problem must not affect ingestion.
+      await cache.recordReading(reading);
     })
     .catch((err: Error) => console.error(`insert failed: ${err.message}`));
 });
@@ -41,6 +47,6 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
   process.on(signal, () => {
     console.log('\nshutting down…');
     client.end(true);
-    void closeDb().finally(() => process.exit(0));
+    void Promise.all([closeDb(), cache.close()]).finally(() => process.exit(0));
   });
 }
