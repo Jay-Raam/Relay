@@ -5,14 +5,25 @@ export interface Point {
   ts: string;
 }
 
-export interface TelemetrySnapshot {
+export interface DeviceOverview {
+  id: string;
+  name: string;
+  type: string;
+  location: string | null;
+  /** Newest reading of the dashboard metric, or null if the device has none yet. */
   latest: Point | null;
+}
+
+export interface Overview {
+  devices: DeviceOverview[];
+  /** History of the selected device, oldest first. Empty when no device is selected. */
   history: Point[];
 }
 
-export interface TelemetryParams {
-  deviceId: string;
+export interface OverviewParams {
   metric: Metric;
+  /** Device whose history to chart. Null = skip the history part of the query. */
+  deviceId: string | null;
   /** How many recent points to chart (the API caps this at 1000). */
   limit?: number;
 }
@@ -27,12 +38,18 @@ export interface FetchOptions {
 export class TelemetryError extends Error {}
 
 const QUERY = /* GraphQL */ `
-  query Telemetry($deviceId: String!, $metric: String!, $limit: Int!) {
-    latest(deviceId: $deviceId, metric: $metric) {
-      value
-      ts
+  query Overview($metric: String!, $deviceId: String!, $limit: Int!, $withHistory: Boolean!) {
+    devices {
+      id
+      name
+      type
+      location
+      latest(metric: $metric) {
+        value
+        ts
+      }
     }
-    history(deviceId: $deviceId, metric: $metric, limit: $limit) {
+    history(deviceId: $deviceId, metric: $metric, limit: $limit) @include(if: $withHistory) {
       value
       ts
     }
@@ -40,16 +57,16 @@ const QUERY = /* GraphQL */ `
 `;
 
 interface GraphQLResponse {
-  data?: TelemetrySnapshot | null;
+  data?: { devices?: DeviceOverview[] | null; history?: Point[] | null } | null;
   errors?: { message: string }[];
 }
 
-/** One round trip: the newest reading plus recent history, oldest first. */
-export async function fetchTelemetry(
+/** One round trip: every device with its newest reading, plus the selected device's history. */
+export async function fetchOverview(
   url: string,
-  params: TelemetryParams,
+  params: OverviewParams,
   options: FetchOptions = {},
-): Promise<TelemetrySnapshot> {
+): Promise<Overview> {
   const doFetch = options.fetchImpl ?? fetch;
 
   let res: Response;
@@ -59,7 +76,12 @@ export async function fetchTelemetry(
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         query: QUERY,
-        variables: { deviceId: params.deviceId, metric: params.metric, limit: params.limit ?? 60 },
+        variables: {
+          metric: params.metric,
+          deviceId: params.deviceId ?? '',
+          limit: params.limit ?? 60,
+          withHistory: params.deviceId !== null,
+        },
       }),
       signal: options.signal,
       cache: 'no-store',
@@ -82,5 +104,8 @@ export async function fetchTelemetry(
   if (firstError) throw new TelemetryError(firstError.message);
   if (!body.data) throw new TelemetryError('API returned no data');
 
-  return { latest: body.data.latest ?? null, history: body.data.history ?? [] };
+  return {
+    devices: (body.data.devices ?? []).map((d) => ({ ...d, latest: d.latest ?? null })),
+    history: body.data.history ?? [],
+  };
 }

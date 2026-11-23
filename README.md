@@ -15,7 +15,7 @@ This repository is a **Turborepo + pnpm monorepo**:
 apps/web        # Next.js frontend
 apps/api        # GraphQL Yoga server
 apps/worker     # MQTT ingestion worker
-packages/*      # shared types, config, env
+packages/*      # shared types, db migrations, Redis cache
 infra/*         # dev scripts (mock publisher), hosting config
 ```
 
@@ -31,7 +31,8 @@ Copy-Item ci\pull_request_template.md .github\ -Force
 Copy-Item .env.example .env               # then fill in the hosted DB + MQTT credentials
 ```
 
-No Docker needed: Relay uses a hosted TimescaleDB and a hosted MQTT broker. Follow
+No Docker needed: Relay uses a hosted TimescaleDB, a hosted MQTT broker and (optionally) a
+hosted Redis. Follow
 **[docs/HOSTED-SETUP.md](docs/HOSTED-SETUP.md)** to create them and fill in `.env`.
 
 macOS/Linux equivalent:
@@ -45,6 +46,24 @@ cp .env.example .env
 ```
 
 Requires **Node ≥ 20** and **pnpm ≥ 9** (`.nvmrc` pins the Node version).
+
+## What it does today
+
+- **Ingest** — MQTT worker validates every message and stores it in a TimescaleDB hypertable.
+- **Query** — GraphQL API: `devices`, `latest`, `history`; per-request DataLoader batching, so a
+  device list costs one cache lookup and at most one SQL query.
+- **Live** — Redis holds the latest value per device and fans new readings out; the API
+  streams them to the browser as a GraphQL subscription (Server-Sent Events). If Redis or the
+  stream is down, the dashboard silently falls back to polling.
+- **Dashboard** — device cards with Live/Stale status, click a device to chart it.
+
+## Built with AI assistance
+
+Most of this codebase was written with [Claude Code](https://claude.com/claude-code), directed
+and reviewed by the repository owner. The tooling is set up so that does not lower the bar: every
+change goes through an issue, a pull request, and the same CI (format, lint, typecheck, tests,
+build) that human-written code does. Commit timestamps are real; nothing about the history is
+staged.
 
 > **Why the copy step?** The canonical hook and workflow sources live in `ci/` and
 > you copy them into `.husky/` and `.github/` once. GitHub Actions requires

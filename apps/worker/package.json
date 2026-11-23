@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@relay/cache": "workspace:*",
     "@relay/types": "workspace:*",
     "mqtt": "^5.10.1",
     "pg": "^8.13.1",

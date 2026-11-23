@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fetchTelemetry, TelemetryError } from './graphql';
-
-const PARAMS = { deviceId: 'dev-001', metric: 'temperature' } as const;
+import { fetchOverview, TelemetryError } from './graphql';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -10,60 +8,110 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-describe('fetchTelemetry', () => {
-  it('returns latest and history from a good response', async () => {
+const DEVICE = { id: 'dev-001', name: 'Sensor', type: 'sensor', location: 'Plant A' };
+
+describe('fetchOverview', () => {
+  it('returns devices with their latest reading plus history', async () => {
     const fetchImpl = (async () =>
       jsonResponse({
         data: {
-          latest: { value: 22.5, ts: '2026-01-01T12:00:00.000Z' },
+          devices: [
+            { ...DEVICE, latest: { value: 22.5, ts: '2026-01-01T12:00:00.000Z' } },
+            { ...DEVICE, id: 'dev-002', latest: null },
+          ],
           history: [{ value: 22.4, ts: '2026-01-01T11:59:58.000Z' }],
         },
       })) as typeof fetch;
 
-    const snap = await fetchTelemetry('http://api/graphql', PARAMS, { fetchImpl });
-    expect(snap.latest?.value).toBe(22.5);
-    expect(snap.history).toHaveLength(1);
+    const o = await fetchOverview(
+      'http://api/graphql',
+      { metric: 'temperature', deviceId: 'dev-001' },
+      { fetchImpl },
+    );
+    expect(o.devices).toHaveLength(2);
+    expect(o.devices[0]?.latest?.value).toBe(22.5);
+    expect(o.devices[1]?.latest).toBeNull();
+    expect(o.history).toHaveLength(1);
   });
 
-  it('sends the variables and defaults the limit to 60', async () => {
-    let sent: { variables?: Record<string, unknown> } = {};
+  it('asks for history only when a device is selected, and defaults the limit to 60', async () => {
+    const sent: { variables: Record<string, unknown> }[] = [];
     const fetchImpl = (async (_url: unknown, init?: RequestInit) => {
-      sent = JSON.parse(String(init?.body)) as typeof sent;
-      return jsonResponse({ data: { latest: null, history: [] } });
+      sent.push(JSON.parse(String(init?.body)) as (typeof sent)[number]);
+      return jsonResponse({ data: { devices: [], history: null } });
     }) as typeof fetch;
 
-    await fetchTelemetry('http://api/graphql', PARAMS, { fetchImpl });
-    expect(sent.variables).toEqual({ deviceId: 'dev-001', metric: 'temperature', limit: 60 });
+    await fetchOverview(
+      'http://api/graphql',
+      { metric: 'temperature', deviceId: null },
+      { fetchImpl },
+    );
+    await fetchOverview(
+      'http://api/graphql',
+      { metric: 'temperature', deviceId: 'dev-001' },
+      { fetchImpl },
+    );
+    expect(sent[0]?.variables).toMatchObject({ withHistory: false, limit: 60 });
+    expect(sent[1]?.variables).toMatchObject({
+      withHistory: true,
+      deviceId: 'dev-001',
+      metric: 'temperature',
+    });
   });
 
-  it('returns null latest and empty history when there is no data yet', async () => {
-    const fetchImpl = (async () =>
-      jsonResponse({ data: { latest: null, history: [] } })) as typeof fetch;
-    const snap = await fetchTelemetry('http://api/graphql', PARAMS, { fetchImpl });
-    expect(snap).toEqual({ latest: null, history: [] });
+  it('treats a missing history as empty (device not selected)', async () => {
+    const fetchImpl = (async () => jsonResponse({ data: { devices: [] } })) as typeof fetch;
+    const o = await fetchOverview(
+      'http://api/graphql',
+      { metric: 'temperature', deviceId: null },
+      { fetchImpl },
+    );
+    expect(o).toEqual({ devices: [], history: [] });
   });
 
-  it('surfaces a GraphQL error message', async () => {
+  it('throws a TelemetryError with the GraphQL message', async () => {
     const fetchImpl = (async () =>
       jsonResponse({ errors: [{ message: 'unknown metric: pressure' }] })) as typeof fetch;
-    await expect(fetchTelemetry('http://api/graphql', PARAMS, { fetchImpl })).rejects.toThrow(
-      'unknown metric: pressure',
-    );
+    await expect(
+      fetchOverview('http://api/graphql', { metric: 'temperature', deviceId: null }, { fetchImpl }),
+    ).rejects.toThrow('unknown metric: pressure');
   });
 
-  it('turns a network failure into a friendly TelemetryError', async () => {
+  it('throws a friendly error when the API is unreachable', async () => {
     const fetchImpl = (async () => {
       throw new TypeError('fetch failed');
     }) as typeof fetch;
-    await expect(fetchTelemetry('http://api/graphql', PARAMS, { fetchImpl })).rejects.toThrow(
-      TelemetryError,
-    );
+    await expect(
+      fetchOverview('http://api/graphql', { metric: 'temperature', deviceId: null }, { fetchImpl }),
+    ).rejects.toThrow(new TelemetryError('Cannot reach the API'));
   });
 
-  it('reports a non-200 status', async () => {
-    const fetchImpl = (async () => jsonResponse({}, 500)) as typeof fetch;
-    await expect(fetchTelemetry('http://api/graphql', PARAMS, { fetchImpl })).rejects.toThrow(
-      'API responded with 500',
-    );
+  it('throws on a non-2xx status and on a non-JSON body', async () => {
+    const bad = (async () => new Response('nope', { status: 502 })) as typeof fetch;
+    await expect(
+      fetchOverview(
+        'http://api/graphql',
+        { metric: 'temperature', deviceId: null },
+        { fetchImpl: bad },
+      ),
+    ).rejects.toThrow('API responded with 502');
+
+    const notJson = (async () => new Response('<html>', { status: 200 })) as typeof fetch;
+    await expect(
+      fetchOverview(
+        'http://api/graphql',
+        { metric: 'temperature', deviceId: null },
+        { fetchImpl: notJson },
+      ),
+    ).rejects.toThrow('invalid response');
+  });
+
+  it('rethrows aborts untouched so callers can ignore them', async () => {
+    const fetchImpl = (async () => {
+      throw new DOMException('aborted', 'AbortError');
+    }) as typeof fetch;
+    await expect(
+      fetchOverview('http://api/graphql', { metric: 'temperature', deviceId: null }, { fetchImpl }),
+    ).rejects.toMatchObject({ name: 'AbortError' });
   });
 });
