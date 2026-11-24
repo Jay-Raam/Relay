@@ -10,14 +10,20 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { isActuator, type Command, type Metric } from '@relay/types';
+import { isActuator, type Command, type Metric, type SessionUser } from '@relay/types';
 import {
   CONFIRM_TIMEOUT_MS,
   resolvePending,
   stateLabel,
   type PendingCommand,
 } from '../lib/commands';
-import { fetchOverview, sendCommand, type DeviceOverview, type Overview } from '../lib/graphql';
+import {
+  AuthRequiredError,
+  fetchOverview,
+  sendCommand,
+  type DeviceOverview,
+  type Overview,
+} from '../lib/graphql';
 import { subscribeToReadings } from '../lib/live';
 import { formatValue, METRIC_INFO } from '../lib/metrics';
 import { applyReading, HISTORY_POINTS, mergeSnapshot } from '../lib/merge';
@@ -39,6 +45,10 @@ const TRANSPORT_LABEL: Record<Transport, string> = {
 interface Props {
   metric: Metric;
   apiUrl: string;
+  user: SessionUser;
+  onSignOut: () => void;
+  /** The API no longer accepts the session (expired, or the account was removed). */
+  onSessionExpired: () => void;
 }
 
 const EMPTY: Overview = { devices: [], history: [] };
@@ -53,7 +63,7 @@ function timeLabel(ms: number): string {
   });
 }
 
-export default function Dashboard({ metric, apiUrl }: Props) {
+export default function Dashboard({ metric, apiUrl, user, onSignOut, onSessionExpired }: Props) {
   const [overview, setOverview] = useState<Overview>(EMPTY);
   const [loaded, setLoaded] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -74,6 +84,8 @@ export default function Dashboard({ metric, apiUrl }: Props) {
   selectedRef.current = selectedId;
   const pendingRef = useRef(pending);
   pendingRef.current = pending;
+  const expiredRef = useRef(onSessionExpired);
+  expiredRef.current = onSessionExpired;
 
   // A 1s ticker keeps "Live/Stale" and the transport label honest even when no data arrives.
   useEffect(() => {
@@ -127,6 +139,12 @@ export default function Dashboard({ metric, apiUrl }: Props) {
         } catch (err) {
           const aborted = err instanceof DOMException && err.name === 'AbortError';
           if (!cancelled && !aborted) {
+            if (err instanceof AuthRequiredError) {
+              // No point polling a session that is gone: hand back to the sign-in form.
+              cancelled = true;
+              expiredRef.current();
+              return;
+            }
             setError(err instanceof Error ? err.message : 'Unknown error');
           }
         }
@@ -178,6 +196,10 @@ export default function Dashboard({ metric, apiUrl }: Props) {
         }));
         setPollNonce((n) => n + 1);
       } catch (err) {
+        if (err instanceof AuthRequiredError) {
+          expiredRef.current();
+          return;
+        }
         const message = err instanceof Error ? err.message : 'Command failed';
         setCommandErrors((prev) => ({ ...prev, [device.id]: message }));
       } finally {
@@ -199,6 +221,7 @@ export default function Dashboard({ metric, apiUrl }: Props) {
   const transport =
     now === null ? 'connecting' : transportLabel(health.current, sseConnecting, clock);
   const selected = overview.devices.find((d) => d.id === selectedId) ?? null;
+  const canCommand = user.role === 'operator';
   const points = overview.history.map((p) => ({ t: Date.parse(p.ts), value: p.value }));
 
   return (
@@ -212,9 +235,20 @@ export default function Dashboard({ metric, apiUrl }: Props) {
               : info.label}
           </div>
         </div>
-        <div className="pill" data-transport={transport}>
-          <span className="dot" />
-          {TRANSPORT_LABEL[transport]}
+        <div className="header-right">
+          <div className="pill" data-transport={transport}>
+            <span className="dot" />
+            {TRANSPORT_LABEL[transport]}
+          </div>
+          <div className="account">
+            <span className="account-email">{user.email}</span>
+            <span className="role-tag" data-role={user.role}>
+              {user.role}
+            </span>
+            <button type="button" className="btn link" onClick={onSignOut}>
+              Sign out
+            </button>
+          </div>
         </div>
       </header>
 
@@ -252,26 +286,30 @@ export default function Dashboard({ metric, apiUrl }: Props) {
                   {d.state && !waiting ? ` · changed ${timeLabel(Date.parse(d.state.ts))}` : ''}
                   {waiting ? ' · waiting for the device…' : ''}
                 </span>
-                <span className="controls">
-                  <button
-                    type="button"
-                    className="btn"
-                    aria-pressed={d.state?.value === 'on'}
-                    disabled={waiting}
-                    onClick={() => void issueCommand(d, 'on')}
-                  >
-                    Turn on
-                  </button>
-                  <button
-                    type="button"
-                    className="btn"
-                    aria-pressed={d.state?.value === 'off'}
-                    disabled={waiting}
-                    onClick={() => void issueCommand(d, 'off')}
-                  >
-                    Turn off
-                  </button>
-                </span>
+                {canCommand ? (
+                  <span className="controls">
+                    <button
+                      type="button"
+                      className="btn"
+                      aria-pressed={d.state?.value === 'on'}
+                      disabled={waiting}
+                      onClick={() => void issueCommand(d, 'on')}
+                    >
+                      Turn on
+                    </button>
+                    <button
+                      type="button"
+                      className="btn"
+                      aria-pressed={d.state?.value === 'off'}
+                      disabled={waiting}
+                      onClick={() => void issueCommand(d, 'off')}
+                    >
+                      Turn off
+                    </button>
+                  </span>
+                ) : (
+                  <span className="view-only">View only</span>
+                )}
                 {error ? (
                   <span className="command-error" role="alert">
                     {error}

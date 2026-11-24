@@ -66,7 +66,8 @@ export function subscribeToReadings(
     JSON.stringify({ metric }),
   )}`;
   onState?.('connecting');
-  const source = new Impl(url);
+  // withCredentials: the stream needs the session cookie, and the API is on another origin.
+  const source = new Impl(url, { withCredentials: true });
 
   source.addEventListener('open', () => onState?.('open'));
   source.addEventListener('error', () => onState?.('error'));

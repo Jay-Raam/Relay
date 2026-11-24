@@ -2,12 +2,14 @@ import pg from 'pg';
 import {
   ACTUATOR_TYPES,
   isCommand,
+  isRole,
   type Command,
   type Device,
   type DeviceState,
   type DeviceType,
   type Metric,
   type Reading,
+  type SessionUser,
 } from '@relay/types';
 import type { HistoryQuery } from './validate';
 
@@ -19,6 +21,11 @@ export interface CommandRecord {
   id: string;
 }
 
+/** An account as stored, including the password hash. Never sent to a client. */
+export interface UserRecord extends SessionUser {
+  passwordHash: string;
+}
+
 /** Everything the API needs from storage. Swappable so tests need no database. */
 export interface TelemetryRepo {
   devices(): Promise<DeviceRecord[]>;
@@ -26,7 +33,12 @@ export interface TelemetryRepo {
    * Log a command for a device. Returns null when the device doesn't exist or is not an
    * actuator (a sensor cannot be commanded) — nothing is written in that case.
    */
-  insertCommand(deviceId: string, command: Command): Promise<CommandRecord | null>;
+  insertCommand(deviceId: string, command: Command, userId: string): Promise<CommandRecord | null>;
+  /** Sign-in lookup. `email` must already be lower-cased. */
+  userByEmail(email: string): Promise<UserRecord | null>;
+  /** The account behind a session, or null if it no longer exists. */
+  userById(id: string): Promise<SessionUser | null>;
+  recordLogin(id: string): Promise<void>;
   /** The command could not be delivered to the broker. */
   markCommandFailed(commandId: string): Promise<void>;
   latest(deviceId: string, metric: Metric): Promise<Reading | null>;
@@ -51,6 +63,13 @@ interface DeviceRow {
   state: string | null;
   command_id: string | null;
   state_ts: Date | null;
+}
+
+interface UserRow {
+  id: string;
+  email: string;
+  role: string;
+  password_hash: string;
 }
 
 function toState(row: DeviceRow): DeviceState | null {
@@ -88,16 +107,40 @@ export function createPgRepo(connectionString: string): TelemetryRepo {
       }));
     },
 
-    async insertCommand(deviceId, command) {
+    async insertCommand(deviceId, command, userId) {
       // The WHERE makes "unknown device" and "not an actuator" the same, safe, no-op.
       const { rows } = await pool.query<{ id: string }>(
-        `INSERT INTO device_commands (device_id, command)
-         SELECT id, $2 FROM devices WHERE id = $1 AND type = ANY($3::text[])
+        `INSERT INTO device_commands (device_id, command, user_id)
+         SELECT id, $2, $4 FROM devices WHERE id = $1 AND type = ANY($3::text[])
          RETURNING id`,
-        [deviceId, command, ACTUATOR_TYPES],
+        [deviceId, command, ACTUATOR_TYPES, userId],
       );
       const row = rows[0];
       return row ? { id: row.id } : null;
+    },
+
+    async userByEmail(email) {
+      const { rows } = await pool.query<UserRow>(
+        `SELECT id, email, role, password_hash FROM users WHERE email = $1`,
+        [email],
+      );
+      const row = rows[0];
+      return row && isRole(row.role)
+        ? { id: row.id, email: row.email, role: row.role, passwordHash: row.password_hash }
+        : null;
+    },
+
+    async userById(id) {
+      const { rows } = await pool.query<UserRow>(
+        `SELECT id, email, role, password_hash FROM users WHERE id = $1`,
+        [id],
+      );
+      const row = rows[0];
+      return row && isRole(row.role) ? { id: row.id, email: row.email, role: row.role } : null;
+    },
+
+    async recordLogin(id) {
+      await pool.query(`UPDATE users SET last_login_at = now() WHERE id = $1`, [id]);
     },
 
     async markCommandFailed(commandId) {

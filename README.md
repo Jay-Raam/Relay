@@ -28,7 +28,7 @@ Copy-Item ci\husky\* .husky\ -Force       # activate the commit/push hooks
 New-Item -ItemType Directory -Force .github\workflows | Out-Null
 Copy-Item ci\workflows\* .github\workflows\ -Force      # install CI/CD workflows
 Copy-Item ci\pull_request_template.md .github\ -Force
-Copy-Item .env.example .env               # then fill in the hosted DB + MQTT credentials
+Copy-Item .env.example .env               # then fill in the hosted DB + MQTT credentials + SESSION_SECRET
 ```
 
 No Docker needed: Relay uses a hosted TimescaleDB, a hosted MQTT broker and (optionally) a
@@ -42,7 +42,7 @@ pnpm install
 cp ci/husky/* .husky/
 mkdir -p .github/workflows && cp ci/workflows/* .github/workflows/
 cp ci/pull_request_template.md .github/
-cp .env.example .env
+cp .env.example .env   # fill in the hosted DB + MQTT credentials + SESSION_SECRET
 ```
 
 Requires **Node ≥ 20** and **pnpm ≥ 9** (`.nvmrc` pins the Node version).
@@ -57,9 +57,12 @@ Requires **Node ≥ 20** and **pnpm ≥ 9** (`.nvmrc` pins the Node version).
   streams them to the browser as a GraphQL subscription (Server-Sent Events). If Redis or the
   stream is down, the dashboard silently falls back to polling.
 - **Dashboard** — device cards with Live/Stale status, click a device to chart it.
-- **Control** — turn pumps and valves on/off from the dashboard. Every command is logged, sent
+- **Sign-in** — every API request needs a login (`viewer` or `operator`). Passwords are stored as
+  salted scrypt hashes, sessions are signed `HttpOnly` cookies, and failed sign-ins are rate
+  limited. Set it up in [docs/HOSTED-SETUP.md](docs/HOSTED-SETUP.md#4-sign-in-and-accounts).
+- **Control** — operators can turn pumps and valves on/off from the dashboard. Every command is logged, sent
   over MQTT, and confirmed by the device's reply; stale or unconfirmed commands are handled safely
-  (see [docs/HOSTED-SETUP.md](docs/HOSTED-SETUP.md#5-controlling-devices-pumps-and-valves)).
+  (see [docs/HOSTED-SETUP.md](docs/HOSTED-SETUP.md#6-controlling-devices-pumps-and-valves)).
 
 ## Built with AI assistance
 

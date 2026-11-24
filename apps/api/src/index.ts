@@ -23,7 +23,24 @@ if (cache.enabled) {
   await cache.subscribeReadings((reading) => bus.publish('reading', reading));
 }
 
-const yoga = buildYoga({ repo, cache, bus, webOrigin: config.WEB_ORIGIN, commands });
+const ttlSeconds = Math.round(config.SESSION_TTL_HOURS * 3600);
+const secureCookie = config.COOKIE_SECURE ?? config.WEB_ORIGIN.startsWith('https://');
+const yoga = buildYoga({
+  repo,
+  cache,
+  bus,
+  webOrigin: config.WEB_ORIGIN,
+  commands,
+  session: {
+    secret: config.SESSION_SECRET,
+    ttlSeconds,
+    cookie: {
+      sameSite: config.COOKIE_SAMESITE,
+      // Browsers reject SameSite=None cookies that aren't Secure.
+      secure: config.COOKIE_SAMESITE === 'none' ? true : secureCookie,
+    },
+  },
+});
 const server = createServer(yoga);
 
 server.listen(config.PORT, () => {

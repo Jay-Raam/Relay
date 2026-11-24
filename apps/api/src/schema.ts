@@ -1,5 +1,6 @@
 import { createGraphQLError, createSchema, filter, pipe } from 'graphql-yoga';
-import type { CommandMessage, Device, Reading } from '@relay/types';
+import type { CommandMessage, Device, Reading, SessionUser } from '@relay/types';
+import { forbidden, unauthenticated } from './auth';
 import type { ReadingBus } from './bus';
 import type { CommandPublisher } from './commands';
 import type { Loaders } from './loaders';
@@ -14,6 +15,21 @@ import {
 
 export interface GraphQLContext {
   loaders: Loaders;
+  /** The signed-in account, or null when the request has no valid session. */
+  user: SessionUser | null;
+}
+
+/** Any signed-in account. Throws UNAUTHENTICATED (HTTP 401) otherwise. */
+function requireUser(ctx: GraphQLContext): SessionUser {
+  return ctx.user ?? unauthenticated();
+}
+
+/** An account allowed to command devices. Throws FORBIDDEN (HTTP 403) for a viewer. */
+function requireOperator(ctx: GraphQLContext): SessionUser {
+  const user = requireUser(ctx);
+  if (user.role !== 'operator')
+    return forbidden('Your account is view-only and cannot send commands');
+  return user;
 }
 
 const typeDefs = /* GraphQL */ `
@@ -103,21 +119,34 @@ export function buildSchema(repo: TelemetryRepo, bus: ReadingBus, commands?: Com
     typeDefs,
     resolvers: {
       Query: {
-        devices: () => repo.devices(),
-        latest: (_: unknown, args: { deviceId: string; metric: string }, ctx: GraphQLContext) =>
-          guard(() =>
+        devices: (_: unknown, __: unknown, ctx: GraphQLContext) => {
+          requireUser(ctx);
+          return repo.devices();
+        },
+        latest: (_: unknown, args: { deviceId: string; metric: string }, ctx: GraphQLContext) => {
+          requireUser(ctx);
+          return guard(() =>
             ctx.loaders.latest.load({ deviceId: args.deviceId, metric: parseMetric(args.metric) }),
-          ),
-        history: (_: unknown, args: HistoryArgs) =>
-          guard(() => repo.history(validateHistory(args))),
+          );
+        },
+        history: (_: unknown, args: HistoryArgs, ctx: GraphQLContext) => {
+          requireUser(ctx);
+          return guard(() => repo.history(validateHistory(args)));
+        },
       },
       Mutation: {
-        sendCommand: (_: unknown, args: { deviceId: string; command: string }) =>
-          guard(async () => {
+        sendCommand: (
+          _: unknown,
+          args: { deviceId: string; command: string },
+          ctx: GraphQLContext,
+        ) => {
+          // Checked before anything else: a viewer learns nothing about devices or config.
+          const user = requireOperator(ctx);
+          return guard(async () => {
             const command = parseCommand(args.command);
             if (!commands) return unavailable('Commands are not configured on this server');
 
-            const record = await repo.insertCommand(args.deviceId, command);
+            const record = await repo.insertCommand(args.deviceId, command, user.id);
             if (!record) {
               throw new InputError(`device not found or cannot be commanded: ${args.deviceId}`);
             }
@@ -138,7 +167,8 @@ export function buildSchema(repo: TelemetryRepo, bus: ReadingBus, commands?: Com
               return unavailable('Could not reach the device broker; the command was not sent');
             }
             return { id: record.id, deviceId: args.deviceId, command, status: 'sent' };
-          }),
+          });
+        },
       },
       Device: {
         latest: (device: Device, args: { metric: string }, ctx: GraphQLContext) =>
@@ -148,7 +178,8 @@ export function buildSchema(repo: TelemetryRepo, bus: ReadingBus, commands?: Com
       },
       Subscription: {
         readingAdded: {
-          subscribe: (_: unknown, args: { metric: string }) => {
+          subscribe: (_: unknown, args: { metric: string }, ctx: GraphQLContext) => {
+            requireUser(ctx);
             const metric = (() => {
               try {
                 return parseMetric(args.metric);

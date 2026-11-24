@@ -94,3 +94,27 @@ export function commandTopic(deviceId: string): string {
 export function stateTopic(deviceId: string): string {
   return `devices/${deviceId}/state`;
 }
+
+// ---------------------------------------------------------------------------
+// Authentication
+// ---------------------------------------------------------------------------
+
+/**
+ * What an account may do. `viewer` can read everything; `operator` can also command devices.
+ */
+export const ROLES = ['viewer', 'operator'] as const;
+
+/** A single account role. */
+export type Role = (typeof ROLES)[number];
+
+/** Runtime guard: is `value` a known role? */
+export function isRole(value: string): value is Role {
+  return (ROLES as readonly string[]).includes(value);
+}
+
+/** The signed-in account, as the API and the dashboard see it (never includes the password). */
+export interface SessionUser {
+  id: string;
+  email: string;
+  role: Role;
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fetchOverview, sendCommand, TelemetryError } from './graphql';
+import { AuthRequiredError, fetchOverview, sendCommand, TelemetryError } from './graphql';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -171,5 +171,60 @@ describe('sendCommand', () => {
     await expect(
       sendCommand('http://api/graphql', 'dev-004', 'off', { fetchImpl }),
     ).rejects.toThrow('Cannot reach the API');
+  });
+});
+
+describe('authentication', () => {
+  const params = { metric: 'temperature', deviceId: null } as const;
+
+  it('sends the session cookie with every request', async () => {
+    let init: RequestInit | undefined;
+    const fetchImpl = (async (_url: unknown, i?: RequestInit) => {
+      init = i;
+      return jsonResponse({ data: { devices: [] } });
+    }) as typeof fetch;
+    await fetchOverview('http://api/graphql', params, { fetchImpl });
+    expect(init?.credentials).toBe('include');
+  });
+
+  it('throws AuthRequiredError on HTTP 401', async () => {
+    const fetchImpl = (async () =>
+      jsonResponse({ errors: [{ message: 'Sign in required' }] }, 401)) as typeof fetch;
+    await expect(fetchOverview('http://api/graphql', params, { fetchImpl })).rejects.toThrow(
+      AuthRequiredError,
+    );
+  });
+
+  it('throws AuthRequiredError on an UNAUTHENTICATED GraphQL error', async () => {
+    const fetchImpl = (async () =>
+      jsonResponse({
+        data: null,
+        errors: [{ message: 'Sign in required', extensions: { code: 'UNAUTHENTICATED' } }],
+      })) as typeof fetch;
+    await expect(sendCommand('http://api/graphql', 'dev-004', 'on', { fetchImpl })).rejects.toThrow(
+      AuthRequiredError,
+    );
+  });
+
+  it('shows the API message when a viewer is refused (FORBIDDEN is not a sign-out)', async () => {
+    const fetchImpl = (async () =>
+      jsonResponse(
+        {
+          data: null,
+          errors: [
+            {
+              message: 'Your account is view-only and cannot send commands',
+              extensions: { code: 'FORBIDDEN' },
+            },
+          ],
+        },
+        403,
+      )) as typeof fetch;
+    const err = await sendCommand('http://api/graphql', 'dev-004', 'on', { fetchImpl }).catch(
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(TelemetryError);
+    expect(err).not.toBeInstanceOf(AuthRequiredError);
+    expect((err as Error).message).toBe('Your account is view-only and cannot send commands');
   });
 });
