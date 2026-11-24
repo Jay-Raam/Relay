@@ -1,6 +1,7 @@
 import { createYoga } from 'graphql-yoga';
 import type { Cache } from '@relay/cache';
 import type { ReadingBus } from './bus';
+import type { CommandPublisher } from './commands';
 import { createLoaders } from './loaders';
 import type { TelemetryRepo } from './repo';
 import { buildSchema, type GraphQLContext } from './schema';
@@ -10,12 +11,14 @@ export interface ServerDeps {
   cache: Cache;
   bus: ReadingBus;
   webOrigin: string;
+  /** Absent when no MQTT broker is configured; sendCommand then reports "not configured". */
+  commands?: CommandPublisher;
 }
 
 /** Build the Yoga app. Pure construction — no listening, so tests can call .fetch(). */
-export function buildYoga({ repo, cache, bus, webOrigin }: ServerDeps) {
+export function buildYoga({ repo, cache, bus, webOrigin, commands }: ServerDeps) {
   return createYoga<object, GraphQLContext>({
-    schema: buildSchema(repo, bus),
+    schema: buildSchema(repo, bus, commands),
     // A fresh set of loaders per operation: batching + memoisation never leak between requests.
     context: () => ({ loaders: createLoaders(repo, cache) }),
     graphqlEndpoint: '/graphql',

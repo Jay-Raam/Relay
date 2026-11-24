@@ -1,4 +1,4 @@
-import { isMetric, type Metric } from '@relay/types';
+import { isCommand, isMetric, type Command, type Metric } from '@relay/types';
 
 export const DEFAULT_LIMIT = 100;
 export const MAX_LIMIT = 1000;
@@ -54,4 +54,9 @@ export function validateHistory(args: HistoryArgs, now: Date = new Date()): Hist
     to: to.toISOString(),
     limit,
   };
+}
+
+export function parseCommand(command: string): Command {
+  if (!isCommand(command)) throw new InputError(`unknown command: ${command}`);
+  return command;
 }
