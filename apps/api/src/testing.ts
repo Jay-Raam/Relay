@@ -1,7 +1,9 @@
 import type { Cache } from '@relay/cache';
-import type { CommandMessage, Metric, Reading } from '@relay/types';
+import type { CommandMessage, Metric, Reading, SessionUser } from '@relay/types';
 import type { CommandPublisher } from './commands';
+import type { SessionConfig } from './auth';
 import type { DeviceRecord, TelemetryRepo } from './repo';
+import { COOKIE_NAME, createSessionToken } from './session';
 import type { HistoryQuery } from './validate';
 
 /** Shared fakes for tests: no database, no Redis. */
@@ -22,11 +24,32 @@ export const DEVICES: DeviceRecord[] = [
 export const PUMP_ID = 'dev-004';
 export const COMMAND_ID = '3f6c1d1e-8a54-4a0f-9b0b-2f2d3a7c9e11';
 
+/** Test accounts. The password for both is PASSWORD (hashed lazily by the tests that need it). */
+export const OPERATOR: SessionUser = {
+  id: 'u-operator',
+  email: 'op@example.com',
+  role: 'operator',
+};
+export const VIEWER: SessionUser = { id: 'u-viewer', email: 'view@example.com', role: 'viewer' };
+export const PASSWORD = 'correct horse battery';
+
+export const TEST_SESSION: SessionConfig = {
+  secret: 'test-secret-test-secret-test-secret-0123',
+  ttlSeconds: 3600,
+  cookie: { secure: false, sameSite: 'lax' },
+};
+
+/** A Cookie header carrying a valid session for `user`. */
+export function cookieFor(user: SessionUser): string {
+  return `${COOKIE_NAME}=${createSessionToken(user.id, TEST_SESSION.secret, TEST_SESSION.ttlSeconds)}`;
+}
+
 export interface RepoCalls {
   history: HistoryQuery[];
   latestMany: { deviceIds: string[]; metric: Metric }[];
   latest: number;
-  commands: { deviceId: string; command: string }[];
+  commands: { deviceId: string; command: string; userId: string }[];
+  logins: string[];
   failed: string[];
 }
 
@@ -34,13 +57,25 @@ export function fakeRepo(overrides: Partial<TelemetryRepo> = {}): {
   repo: TelemetryRepo;
   calls: RepoCalls;
 } {
-  const calls: RepoCalls = { history: [], latestMany: [], latest: 0, commands: [], failed: [] };
+  const calls: RepoCalls = {
+    history: [],
+    latestMany: [],
+    latest: 0,
+    commands: [],
+    failed: [],
+    logins: [],
+  };
   const repo: TelemetryRepo = {
     devices: async () => DEVICES,
-    insertCommand: async (deviceId, command) => {
+    insertCommand: async (deviceId, command, userId) => {
       if (deviceId !== PUMP_ID) return null; // unknown device or a sensor
-      calls.commands.push({ deviceId, command });
+      calls.commands.push({ deviceId, command, userId });
       return { id: COMMAND_ID };
+    },
+    userByEmail: async () => null,
+    userById: async (id) => [OPERATOR, VIEWER].find((u) => u.id === id) ?? null,
+    recordLogin: async (id) => {
+      calls.logins.push(id);
     },
     markCommandFailed: async (id) => {
       calls.failed.push(id);

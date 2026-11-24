@@ -4,14 +4,18 @@ import { createReadingBus } from './bus';
 import { buildYoga } from './server';
 import type { TelemetryRepo } from './repo';
 import type { CommandPublisher } from './commands';
+import type { SessionUser } from '@relay/types';
 import {
   COMMAND_ID,
+  cookieFor,
   DEVICES,
   fakeCache,
   fakePublisher,
   fakeRepo,
+  OPERATOR,
   PUMP_ID,
   READING,
+  TEST_SESSION,
   type FakeCache,
 } from './testing';
 
@@ -22,7 +26,14 @@ interface GqlResponse {
 
 function app(repo: TelemetryRepo, cache: FakeCache = fakeCache(), commands?: CommandPublisher) {
   const bus = createReadingBus();
-  const yoga = buildYoga({ repo, cache, bus, webOrigin: 'http://localhost:3000', commands });
+  const yoga = buildYoga({
+    repo,
+    cache,
+    bus,
+    webOrigin: 'http://localhost:3000',
+    commands,
+    session: TEST_SESSION,
+  });
   return { yoga, bus };
 }
 
@@ -31,10 +42,14 @@ async function gql(
   query: string,
   cache?: FakeCache,
   commands?: CommandPublisher,
+  user: SessionUser | null = OPERATOR,
 ): Promise<GqlResponse> {
   const res = await app(repo, cache, commands).yoga.fetch('http://localhost/graphql', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      ...(user ? { cookie: cookieFor(user) } : {}),
+    },
     body: JSON.stringify({ query }),
   });
   return (await res.json()) as GqlResponse;
@@ -195,7 +210,7 @@ describe('sendCommand', () => {
       command: 'on',
       status: 'sent',
     });
-    expect(calls.commands).toEqual([{ deviceId: PUMP_ID, command: 'on' }]);
+    expect(calls.commands).toEqual([{ deviceId: PUMP_ID, command: 'on', userId: OPERATOR.id }]);
     expect(publisher.sent).toHaveLength(1);
     expect(publisher.sent[0]?.deviceId).toBe(PUMP_ID);
     // the id is what the device echoes back to confirm
@@ -282,7 +297,7 @@ describe('readingAdded subscription (SSE)', () => {
     const { yoga, bus } = app(repo);
     const query = 'subscription { readingAdded(metric: "temperature") { deviceId metric value } }';
     const res = await yoga.fetch(`http://localhost/graphql?query=${encodeURIComponent(query)}`, {
-      headers: { accept: 'text/event-stream' },
+      headers: { accept: 'text/event-stream', cookie: cookieFor(OPERATOR) },
     });
     expect(res.headers.get('content-type')).toContain('text/event-stream');
     expect(res.body).not.toBeNull();

@@ -39,9 +39,16 @@ export interface FetchOptions {
 /** Anything that goes wrong talking to the API, with a message safe to show in the UI. */
 export class TelemetryError extends Error {}
 
+/** The API says there is no valid session: the dashboard should show the sign-in form. */
+export class AuthRequiredError extends TelemetryError {
+  constructor(message = 'Sign in required') {
+    super(message);
+  }
+}
+
 interface GraphQLResponse<T> {
   data?: T | null;
-  errors?: { message: string }[];
+  errors?: { message: string; extensions?: { code?: string } }[];
 }
 
 /** POST one GraphQL operation and return its data, or throw a TelemetryError. */
@@ -61,23 +68,33 @@ async function post<T>(
       body: JSON.stringify({ query, variables }),
       signal: options.signal,
       cache: 'no-store',
+      // Send the session cookie (the API is on another origin).
+      credentials: 'include',
     });
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') throw err;
     throw new TelemetryError('Cannot reach the API');
   }
 
-  if (!res.ok) throw new TelemetryError(`API responded with ${res.status}`);
+  if (res.status === 401) throw new AuthRequiredError();
 
   let body: GraphQLResponse<T>;
   try {
     body = (await res.json()) as GraphQLResponse<T>;
   } catch {
+    // A non-JSON failure (proxy error page, etc.) is reported by status; a 200 is just broken.
+    if (!res.ok) throw new TelemetryError(`API responded with ${res.status}`);
     throw new TelemetryError('API returned an invalid response');
   }
 
+  // Error bodies carry a message meant for the user (e.g. a viewer's "view-only"), so prefer it
+  // over a bare status code.
   const firstError = body.errors?.[0];
-  if (firstError) throw new TelemetryError(firstError.message);
+  if (firstError) {
+    if (firstError.extensions?.code === 'UNAUTHENTICATED') throw new AuthRequiredError();
+    throw new TelemetryError(firstError.message);
+  }
+  if (!res.ok) throw new TelemetryError(`API responded with ${res.status}`);
   if (!body.data) throw new TelemetryError('API returned no data');
   return body.data;
 }

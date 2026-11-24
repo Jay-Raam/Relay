@@ -283,3 +283,92 @@ code {
   color: var(--bad);
   font-size: 12px;
 }
+
+/* --- Sign-in and account ------------------------------------------------ */
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.account {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.account-email {
+  color: var(--muted);
+}
+
+.role-tag {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.role-tag[data-role='operator'] {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.btn.link {
+  flex: none;
+  padding: 4px 10px;
+}
+
+.view-only {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.login-page {
+  max-width: 420px;
+  padding-top: 12vh;
+}
+
+.login {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 24px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.field input {
+  padding: 9px 10px;
+  color: var(--text);
+  font: inherit;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.field input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.btn.primary {
+  flex: none;
+  padding: 10px 12px;
+  font-weight: 600;
+  background: rgba(56, 189, 248, 0.15);
+  border-color: var(--accent);
+}

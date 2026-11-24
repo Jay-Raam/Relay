@@ -1,22 +1,5 @@
-import { readFileSync, existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
-
-/** Load the repo-root .env into process.env (without overriding real env vars). */
-function loadDotEnv(): void {
-  const here = dirname(fileURLToPath(import.meta.url));
-  const envPath = join(here, '..', '..', '..', '.env'); // apps/api/src -> repo root
-  if (!existsSync(envPath)) return;
-  for (const line of readFileSync(envPath, 'utf8').split('\n')) {
-    const match = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
-    const key = match?.[1];
-    const rawValue = match?.[2];
-    if (key !== undefined && rawValue !== undefined && process.env[key] === undefined) {
-      process.env[key] = rawValue.replace(/^["']|["']$/g, '');
-    }
-  }
-}
+import { loadDotEnv } from './env';
 
 loadDotEnv();
 
@@ -30,6 +13,21 @@ const schema = z.object({
   MQTT_URL: z.string().optional(),
   MQTT_USERNAME: z.string().optional(),
   MQTT_PASSWORD: z.string().optional(),
+  // Signs session cookies. Required, no default: a guessable default would let anyone forge a
+  // session. Generate one: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+  SESSION_SECRET: z.string().min(32, 'SESSION_SECRET must be at least 32 characters'),
+  SESSION_TTL_HOURS: z.coerce
+    .number()
+    .positive()
+    .max(24 * 30)
+    .default(12),
+  // Defaults to true when WEB_ORIGIN is https. Needed for cookies over plain http on localhost: false.
+  COOKIE_SECURE: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === 'true')),
+  // Use `none` only when the web app and API are on different sites (it requires https).
+  COOKIE_SAMESITE: z.enum(['lax', 'strict', 'none']).default('lax'),
 });
 
 // Validate env on boot — a missing/bad var crashes at startup, not at 2am.

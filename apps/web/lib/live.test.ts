@@ -44,7 +44,10 @@ class FakeEventSource {
   static last: FakeEventSource | undefined;
   closed = false;
   private handlers = new Map<string, ((e: unknown) => void)[]>();
-  constructor(public url: string) {
+  constructor(
+    public url: string,
+    public init?: EventSourceInit,
+  ) {
     FakeEventSource.last = this;
   }
   addEventListener(type: string, fn: (e: unknown) => void) {
@@ -79,6 +82,11 @@ describe('subscribeToReadings', () => {
     expect(JSON.parse(url.searchParams.get('variables') ?? '{}')).toEqual({
       metric: 'temperature',
     });
+  });
+
+  it('sends the session cookie with the stream (withCredentials)', () => {
+    const { es } = setup();
+    expect(es.init?.withCredentials).toBe(true);
   });
 
   it('reports connecting -> open -> error', () => {
