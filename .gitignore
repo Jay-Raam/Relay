@@ -9,6 +9,7 @@ build/
 next-env.d.ts
 out/
 .turbo/
+*.tsbuildinfo
 
 # Test / coverage
 coverage/
