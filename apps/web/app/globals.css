@@ -218,3 +218,68 @@ code {
   padding: 1px 6px;
   font-size: 0.9em;
 }
+
+.type-tag {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.device.actuator {
+  cursor: default;
+}
+
+.device.actuator:hover {
+  border-color: var(--border);
+}
+
+.device.actuator[data-state='on'] {
+  border-color: var(--ok);
+}
+
+.device.actuator[data-state='on'] .device-value {
+  color: var(--ok);
+}
+
+.controls {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.btn {
+  flex: 1;
+  padding: 8px 10px;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.btn:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.btn[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: rgba(56, 189, 248, 0.1);
+}
+
+.btn:disabled {
+  color: var(--muted);
+  cursor: progress;
+}
+
+.command-error {
+  color: var(--bad);
+  font-size: 12px;
+}

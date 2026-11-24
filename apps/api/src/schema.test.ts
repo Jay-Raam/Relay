@@ -3,21 +3,36 @@ import type { Reading } from '@relay/types';
 import { createReadingBus } from './bus';
 import { buildYoga } from './server';
 import type { TelemetryRepo } from './repo';
-import { fakeCache, fakeRepo, READING, type FakeCache } from './testing';
+import type { CommandPublisher } from './commands';
+import {
+  COMMAND_ID,
+  DEVICES,
+  fakeCache,
+  fakePublisher,
+  fakeRepo,
+  PUMP_ID,
+  READING,
+  type FakeCache,
+} from './testing';
 
 interface GqlResponse {
   data?: Record<string, unknown> | null;
   errors?: { message: string; extensions?: { code?: string } }[];
 }
 
-function app(repo: TelemetryRepo, cache: FakeCache = fakeCache()) {
+function app(repo: TelemetryRepo, cache: FakeCache = fakeCache(), commands?: CommandPublisher) {
   const bus = createReadingBus();
-  const yoga = buildYoga({ repo, cache, bus, webOrigin: 'http://localhost:3000' });
+  const yoga = buildYoga({ repo, cache, bus, webOrigin: 'http://localhost:3000', commands });
   return { yoga, bus };
 }
 
-async function gql(repo: TelemetryRepo, query: string, cache?: FakeCache): Promise<GqlResponse> {
-  const res = await app(repo, cache).yoga.fetch('http://localhost/graphql', {
+async function gql(
+  repo: TelemetryRepo,
+  query: string,
+  cache?: FakeCache,
+  commands?: CommandPublisher,
+): Promise<GqlResponse> {
+  const res = await app(repo, cache, commands).yoga.fetch('http://localhost/graphql', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ query }),
@@ -135,6 +150,102 @@ describe('devices', () => {
     const { repo } = fakeRepo();
     const res = await gql(repo, '{ devices { latest(metric: "pressure") { value } } }');
     expect(res.errors?.[0]?.extensions?.code).toBe('BAD_USER_INPUT');
+  });
+});
+
+describe('Device.state', () => {
+  it('returns the last reported state of an actuator and null for a sensor', async () => {
+    const { repo } = fakeRepo({
+      devices: async () => [
+        ...DEVICES.slice(0, 1),
+        {
+          id: PUMP_ID,
+          name: 'Pump',
+          type: 'pump',
+          location: null,
+          state: { value: 'on', ts: '2026-01-01T12:00:00.000Z', commandId: COMMAND_ID },
+        },
+      ],
+    });
+    const res = await gql(repo, '{ devices { id state { value ts commandId } } }');
+    expect(res.errors).toBeUndefined();
+    const devices = res.data?.devices as { id: string; state: unknown }[];
+    expect(devices[0]?.state).toBeNull();
+    expect(devices[1]?.state).toEqual({
+      value: 'on',
+      ts: '2026-01-01T12:00:00.000Z',
+      commandId: COMMAND_ID,
+    });
+  });
+});
+
+describe('sendCommand', () => {
+  const MUTATION = (device: string, command: string) =>
+    `mutation { sendCommand(deviceId: "${device}", command: "${command}") { id deviceId command status } }`;
+
+  it('logs the command, publishes it with the same id, and reports it sent', async () => {
+    const { repo, calls } = fakeRepo();
+    const publisher = fakePublisher();
+    const res = await gql(repo, MUTATION(PUMP_ID, 'on'), undefined, publisher);
+
+    expect(res.errors).toBeUndefined();
+    expect(res.data?.sendCommand).toEqual({
+      id: COMMAND_ID,
+      deviceId: PUMP_ID,
+      command: 'on',
+      status: 'sent',
+    });
+    expect(calls.commands).toEqual([{ deviceId: PUMP_ID, command: 'on' }]);
+    expect(publisher.sent).toHaveLength(1);
+    expect(publisher.sent[0]?.deviceId).toBe(PUMP_ID);
+    // the id is what the device echoes back to confirm
+    expect(publisher.sent[0]?.message).toMatchObject({ commandId: COMMAND_ID, command: 'on' });
+    expect(Number.isNaN(Date.parse(publisher.sent[0]?.message.ts ?? ''))).toBe(false);
+  });
+
+  it('rejects an unknown command before touching the database or the broker', async () => {
+    const { repo, calls } = fakeRepo();
+    const publisher = fakePublisher();
+    const res = await gql(repo, MUTATION(PUMP_ID, 'explode'), undefined, publisher);
+    expect(res.errors?.[0]?.extensions?.code).toBe('BAD_USER_INPUT');
+    expect(res.errors?.[0]?.message).toBe('unknown command: explode');
+    expect(calls.commands).toHaveLength(0);
+    expect(publisher.sent).toHaveLength(0);
+  });
+
+  it('rejects a sensor or unknown device and sends nothing', async () => {
+    const { repo } = fakeRepo();
+    const publisher = fakePublisher();
+    const res = await gql(repo, MUTATION('dev-001', 'on'), undefined, publisher);
+    expect(res.errors?.[0]?.extensions?.code).toBe('BAD_USER_INPUT');
+    expect(res.errors?.[0]?.message).toContain('cannot be commanded');
+    expect(publisher.sent).toHaveLength(0);
+  });
+
+  it('marks the command failed and reports SERVICE_UNAVAILABLE when the broker is down', async () => {
+    const { repo, calls } = fakeRepo();
+    const res = await gql(repo, MUTATION(PUMP_ID, 'on'), undefined, fakePublisher(true));
+    expect(res.errors?.[0]?.extensions?.code).toBe('SERVICE_UNAVAILABLE');
+    expect(res.errors?.[0]?.message).toContain('command was not sent');
+    expect(calls.failed).toEqual([COMMAND_ID]);
+  });
+
+  it('still reports the broker problem if marking the command failed also fails', async () => {
+    const { repo } = fakeRepo({
+      markCommandFailed: async () => {
+        throw new Error('db down');
+      },
+    });
+    const res = await gql(repo, MUTATION(PUMP_ID, 'on'), undefined, fakePublisher(true));
+    expect(res.errors?.[0]?.extensions?.code).toBe('SERVICE_UNAVAILABLE');
+  });
+
+  it('says commands are not configured, and logs nothing, when there is no broker', async () => {
+    const { repo, calls } = fakeRepo();
+    const res = await gql(repo, MUTATION(PUMP_ID, 'on'));
+    expect(res.errors?.[0]?.extensions?.code).toBe('SERVICE_UNAVAILABLE');
+    expect(res.errors?.[0]?.message).toContain('not configured');
+    expect(calls.commands).toHaveLength(0);
   });
 });
 

@@ -1,10 +1,10 @@
 import mqtt from 'mqtt';
 import { createCache } from '@relay/cache';
 import { config } from './config';
-import { parseTelemetry } from './handler';
-import { insertTelemetry, closeDb } from './db';
+import { parseState, parseTelemetry, topicKind } from './handler';
+import { applyDeviceState, insertTelemetry, closeDb } from './db';
 
-const TOPIC = 'devices/+/telemetry';
+const TOPICS = ['devices/+/telemetry', 'devices/+/state'];
 
 const cache = createCache(config.REDIS_URL || undefined);
 
@@ -16,13 +16,13 @@ const client = mqtt.connect(config.MQTT_URL, {
 
 client.on('connect', () => {
   console.log(`worker connected to ${config.MQTT_URL}`);
-  client.subscribe(TOPIC, { qos: 1 }, (err) => {
+  client.subscribe(TOPICS, { qos: 1 }, (err) => {
     if (err) console.error(`subscribe failed: ${err.message}`);
-    else console.log(`subscribed to ${TOPIC}`);
+    else console.log(`subscribed to ${TOPICS.join(', ')}`);
   });
 });
 
-client.on('message', (topic, payload) => {
+function handleTelemetry(topic: string, payload: Buffer): void {
   const result = parseTelemetry(topic, payload);
   if (!result.ok) {
     // One bad payload must never crash the worker — drop and move on.
@@ -38,6 +38,31 @@ client.on('message', (topic, payload) => {
       await cache.recordReading(reading);
     })
     .catch((err: Error) => console.error(`insert failed: ${err.message}`));
+}
+
+function handleState(topic: string, payload: Buffer): void {
+  const result = parseState(topic, payload);
+  if (!result.ok) {
+    console.warn(`dropped message on ${topic}: ${result.error}`);
+    return;
+  }
+  const update = result.update;
+  applyDeviceState(update)
+    .then((known) => {
+      if (!known) console.warn(`dropped state for unknown device ${update.deviceId}`);
+      else
+        console.log(
+          `✓ ${update.deviceId} state=${update.state}${update.commandId ? ' (confirms command)' : ''}`,
+        );
+    })
+    .catch((err: Error) => console.error(`state update failed: ${err.message}`));
+}
+
+client.on('message', (topic, payload) => {
+  const kind = topicKind(topic);
+  if (kind === 'telemetry') handleTelemetry(topic, payload);
+  else if (kind === 'state') handleState(topic, payload);
+  else console.warn(`dropped message on unexpected topic ${topic}`);
 });
 
 client.on('error', (err) => console.error(`mqtt error: ${err.message}`));

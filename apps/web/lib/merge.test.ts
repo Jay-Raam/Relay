@@ -9,6 +9,7 @@ const dev = (id: string, latest: { value: number; ts: string } | null) => ({
   type: 'sensor',
   location: null,
   latest,
+  state: null,
 });
 const reading = (deviceId: string, value: number, s: number) => ({
   deviceId,
