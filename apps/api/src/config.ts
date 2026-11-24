@@ -26,6 +26,10 @@ const schema = z.object({
   WEB_ORIGIN: z.string().default('http://localhost:3000'),
   // Optional: without Redis, `latest` reads the database and live push is off (clients poll).
   REDIS_URL: z.string().optional(),
+  // Optional: without an MQTT broker the API still serves data; sendCommand reports "not configured".
+  MQTT_URL: z.string().optional(),
+  MQTT_USERNAME: z.string().optional(),
+  MQTT_PASSWORD: z.string().optional(),
 });
 
 // Validate env on boot — a missing/bad var crashes at startup, not at 2am.

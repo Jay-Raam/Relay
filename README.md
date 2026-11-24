@@ -49,13 +49,17 @@ Requires **Node ≥ 20** and **pnpm ≥ 9** (`.nvmrc` pins the Node version).
 
 ## What it does today
 
-- **Ingest** — MQTT worker validates every message and stores it in a TimescaleDB hypertable.
+- **Ingest** — MQTT worker validates every message and stores it in a TimescaleDB hypertable,
+  along with each actuator's reported state.
 - **Query** — GraphQL API: `devices`, `latest`, `history`; per-request DataLoader batching, so a
   device list costs one cache lookup and at most one SQL query.
 - **Live** — Redis holds the latest value per device and fans new readings out; the API
   streams them to the browser as a GraphQL subscription (Server-Sent Events). If Redis or the
   stream is down, the dashboard silently falls back to polling.
 - **Dashboard** — device cards with Live/Stale status, click a device to chart it.
+- **Control** — turn pumps and valves on/off from the dashboard. Every command is logged, sent
+  over MQTT, and confirmed by the device's reply; stale or unconfirmed commands are handled safely
+  (see [docs/HOSTED-SETUP.md](docs/HOSTED-SETUP.md#5-controlling-devices-pumps-and-valves)).
 
 ## Built with AI assistance
 

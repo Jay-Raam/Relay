@@ -18,7 +18,7 @@ push. All run as free hosted services, so nothing needs installing locally.
 DATABASE_URL=postgres://tsdbadmin:PASSWORD@HOST:PORT/tsdb?sslmode=require
 ```
 
-Then create the tables and the three demo devices (safe to re-run):
+Then create the tables and the five demo devices (three sensors, a pump and a valve; safe to re-run):
 
 ```powershell
 pnpm --filter @relay/db migrate:seed
@@ -41,6 +41,9 @@ MQTT_PASSWORD=your-password
 ```
 
 Use `mqtts://` and port `8883` (TLS). Plain `mqtt://` on 1883 is not available on the free cluster.
+
+The same credentials are used by the worker (to listen) and by the API (to publish commands to
+pumps and valves), so they need both publish **and** subscribe permission.
 
 ## 3. Redis — Upstash (optional, recommended)
 
@@ -65,7 +68,7 @@ Open four terminals in the repo root:
 
 ```powershell
 pnpm --filter @relay/worker start           # subscribes, validates, inserts
-pnpm --filter @relay/mock-publisher start   # publishes a fake temperature for 3 devices every 2s
+pnpm --filter @relay/mock-publisher start   # 3 fake temperature sensors + a simulated pump and valve
 pnpm --filter @relay/api start              # GraphQL at http://localhost:4000/graphql
 pnpm --filter @relay/web dev                # dashboard at http://localhost:3000
 ```
@@ -107,7 +110,45 @@ subscription {
 }
 ```
 
-To simulate other devices, set `DEVICE_IDS` (comma separated) before starting the publisher.
+To simulate other devices, set `DEVICE_IDS` (sensors) or `ACTUATOR_IDS` (pumps/valves), comma
+separated, before starting the publisher.
+
+## 5. Controlling devices (pumps and valves)
+
+The two actuator cards on the dashboard have **Turn on** / **Turn off** buttons. Click one and
+the card shows "waiting for the device…" until the device confirms, normally in well under a second.
+
+What happens behind the button:
+
+1. The dashboard calls the GraphQL mutation `sendCommand`.
+2. The API checks the device exists and is a pump or valve, writes the command to the
+   `device_commands` table (the audit log), and publishes it to `devices/{id}/commands` at QoS 1.
+3. The device switches and publishes `devices/{id}/state` with the same `commandId`.
+4. The worker stores the state and marks the command `confirmed`; the dashboard sees it and updates.
+
+```graphql
+mutation {
+  sendCommand(deviceId: "dev-004", command: "on") {
+    id
+    status
+  }
+}
+```
+
+If the device never answers, the card shows "No confirmation from the device after 5s. It may be
+offline." and the command stays `sent` in the log. If the broker itself is unreachable the API
+refuses straight away and marks the command `failed`.
+
+**Safety rules built in.** A command is a physical action, so:
+
+- A command is never queued while the broker connection is down (no surprise "pump on" minutes later).
+- Devices must ignore commands older than 30 seconds, or older than one they already applied. The
+  simulated devices do, and a real controller should too. This needs roughly synchronised clocks
+  (NTP) between the API host and the devices.
+- Only `on` and `off` are accepted, and only for pumps and valves; sensors cannot be commanded.
+
+> **There is no login yet.** Anyone who can reach the API URL can send commands. That is fine on
+> your own machine; add authentication before exposing the API publicly (planned).
 
 ## Troubleshooting
 

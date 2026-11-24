@@ -6,10 +6,15 @@
  *
  *   node mock-publisher.mjs
  *
- * Env (read from the repo-root .env, real env vars win): MQTT_URL, MQTT_USERNAME,
- *      MQTT_PASSWORD, DEVICE_IDS (default dev-001,dev-002,dev-003), INTERVAL_MS (default 2000).
+ * It also simulates actuators (a pump and a valve): it listens on devices/{id}/commands, applies
+ * on/off, and answers on devices/{id}/state with the commandId so the dashboard can confirm.
+ *
+ * Env (read from the repo-root .env, real env vars win): MQTT_URL, MQTT_USERNAME, MQTT_PASSWORD,
+ *      DEVICE_IDS (sensors, default dev-001,dev-002,dev-003),
+ *      ACTUATOR_IDS (default dev-004,dev-005), INTERVAL_MS (default 2000).
  */
 import mqtt from 'mqtt';
+import { createActuator } from './actuator.mjs';
 
 // Load the repo-root .env (Node >= 20.12). Existing env vars are not overridden.
 try {
@@ -24,7 +29,15 @@ const deviceIds = (process.env.DEVICE_IDS || process.env.DEVICE_ID || 'dev-001,d
   .split(',')
   .map((id) => id.trim())
   .filter(Boolean);
+const actuatorIds = (process.env.ACTUATOR_IDS ?? 'dev-004,dev-005')
+  .split(',')
+  .map((id) => id.trim())
+  .filter(Boolean);
 const intervalMs = Number(process.env.INTERVAL_MS || 2000);
+/** Pretend the hardware takes a moment to switch. */
+const SWITCH_DELAY_MS = 300;
+
+const actuators = new Map(actuatorIds.map((id) => [id, createActuator(id)]));
 
 const client = mqtt.connect(url, {
   username: process.env.MQTT_USERNAME || undefined,
@@ -37,8 +50,28 @@ function temperatureFor(index) {
   return Number((base + (Math.random() - 0.5)).toFixed(2));
 }
 
+let started = false;
+
+function publishState(deviceId, report) {
+  const topic = `devices/${deviceId}/state`;
+  const payload = JSON.stringify(report);
+  client.publish(topic, payload, { qos: 1 });
+  console.log(`→ ${topic} ${payload}`);
+}
+
 client.on('connect', () => {
   console.log(`mock-publisher connected to ${url}`);
+
+  if (actuators.size > 0) {
+    client.subscribe('devices/+/commands', { qos: 1 });
+    console.log(`simulating actuators ${actuatorIds.join(', ')} (listening for commands)`);
+    // Report the boot state so the dashboard shows OFF rather than "unknown".
+    for (const [id, actuator] of actuators) publishState(id, actuator.report());
+  }
+
+  // 'connect' fires again after every reconnect; only start the publishing loop once.
+  if (started) return;
+  started = true;
   console.log(`publishing for ${deviceIds.join(', ')} every ${intervalMs}ms (Ctrl+C to stop)`);
 
   setInterval(() => {
@@ -53,6 +86,19 @@ client.on('connect', () => {
       console.log(`→ ${topic} ${payload}`);
     });
   }, intervalMs);
+});
+
+client.on('message', (topic, payload) => {
+  const match = topic.match(/^devices\/([^/]+)\/commands$/);
+  const actuator = match ? actuators.get(match[1]) : undefined;
+  if (!actuator) return; // a command for some other device
+  const result = actuator.handleCommand(payload);
+  if (!result.accepted) {
+    console.warn(`✗ ${actuator.deviceId} ignored command: ${result.reason}`);
+    return;
+  }
+  console.log(`✓ ${actuator.deviceId} -> ${result.report.state}`);
+  setTimeout(() => publishState(actuator.deviceId, result.report), SWITCH_DELAY_MS);
 });
 
 client.on('error', (err) => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   FAST_POLL_MS,
+  PENDING_POLL_MS,
   nextPollDelay,
   PUSH_FRESH_MS,
   pushIsHealthy,
@@ -24,6 +25,12 @@ describe('push health & poll cadence', () => {
     expect(nextPollDelay({ open: false, lastEventAt: null }, NOW)).toBe(FAST_POLL_MS);
     // stream open but silent (e.g. worker down): fall back to fast polling
     expect(nextPollDelay({ open: true, lastEventAt: NOW - 60_000 }, NOW)).toBe(FAST_POLL_MS);
+  });
+
+  it('polls fast while a command awaits confirmation, even with healthy push', () => {
+    expect(nextPollDelay({ open: true, lastEventAt: NOW }, NOW, true)).toBe(PENDING_POLL_MS);
+    expect(nextPollDelay({ open: false, lastEventAt: null }, NOW, true)).toBe(PENDING_POLL_MS);
+    expect(nextPollDelay({ open: true, lastEventAt: NOW }, NOW, false)).toBe(SLOW_POLL_MS);
   });
 
   it('labels the transport', () => {

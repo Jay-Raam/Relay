@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node mock-publisher.mjs"
+    "start": "node mock-publisher.mjs",
+    "test": "node --test"
   },
   "dependencies": {
     "mqtt": "^5.10.1"

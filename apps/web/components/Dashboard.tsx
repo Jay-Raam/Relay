@@ -10,8 +10,14 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import type { Metric } from '@relay/types';
-import { fetchOverview, type Overview } from '../lib/graphql';
+import { isActuator, type Command, type Metric } from '@relay/types';
+import {
+  CONFIRM_TIMEOUT_MS,
+  resolvePending,
+  stateLabel,
+  type PendingCommand,
+} from '../lib/commands';
+import { fetchOverview, sendCommand, type DeviceOverview, type Overview } from '../lib/graphql';
 import { subscribeToReadings } from '../lib/live';
 import { formatValue, METRIC_INFO } from '../lib/metrics';
 import { applyReading, HISTORY_POINTS, mergeSnapshot } from '../lib/merge';
@@ -37,6 +43,8 @@ interface Props {
 
 const EMPTY: Overview = { devices: [], history: [] };
 
+const TIMEOUT_MESSAGE = `No confirmation from the device after ${CONFIRM_TIMEOUT_MS / 1000}s. It may be offline.`;
+
 function timeLabel(ms: number): string {
   return new Date(ms).toLocaleTimeString([], {
     hour: '2-digit',
@@ -52,11 +60,20 @@ export default function Dashboard({ metric, apiUrl }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState<number | null>(null);
   const [sseConnecting, setSseConnecting] = useState(true);
+  // Commands: accepted by the broker but not yet confirmed by the device, per device.
+  const [pending, setPending] = useState<Record<string, PendingCommand>>({});
+  // Devices whose command request is currently in flight to the API.
+  const [sending, setSending] = useState<Record<string, boolean>>({});
+  const [commandErrors, setCommandErrors] = useState<Record<string, string>>({});
+  // Bumped after a command is accepted: restarts the poll loop for an immediate refresh.
+  const [pollNonce, setPollNonce] = useState(0);
 
   // Push health lives in a ref: the poll loop reads it without re-running effects.
   const health = useRef<PushHealth>({ open: false, lastEventAt: null });
   const selectedRef = useRef<string | null>(null);
   selectedRef.current = selectedId;
+  const pendingRef = useRef(pending);
+  pendingRef.current = pending;
 
   // A 1s ticker keeps "Live/Stale" and the transport label honest even when no data arrives.
   useEffect(() => {
@@ -102,10 +119,10 @@ export default function Dashboard({ metric, apiUrl }: Props) {
             setOverview((prev) => mergeSnapshot(prev, next));
             setLoaded(true);
             setError(null);
-            // First load: select the first device. Changing selectedId restarts this effect.
-            if (selectedRef.current === null && next.devices[0]) {
-              setSelectedId(next.devices[0].id);
-            }
+            // First load: select the first sensor (actuators have no chart). Changing
+            // selectedId restarts this effect.
+            const firstSensor = next.devices.find((d) => !isActuator(d.type));
+            if (selectedRef.current === null && firstSensor) setSelectedId(firstSensor.id);
           }
         } catch (err) {
           const aborted = err instanceof DOMException && err.name === 'AbortError';
@@ -114,8 +131,11 @@ export default function Dashboard({ metric, apiUrl }: Props) {
           }
         }
       }
-      if (!cancelled)
-        timer = setTimeout(() => void tick(), nextPollDelay(health.current, Date.now()));
+      if (!cancelled) {
+        // Poll fast while a command awaits its confirmation (it arrives via the database).
+        const waiting = Object.keys(pendingRef.current).length > 0;
+        timer = setTimeout(() => void tick(), nextPollDelay(health.current, Date.now(), waiting));
+      }
     }
 
     void tick();
@@ -124,7 +144,48 @@ export default function Dashboard({ metric, apiUrl }: Props) {
       controller.abort();
       if (timer) clearTimeout(timer);
     };
-  }, [apiUrl, metric, selectedId]);
+  }, [apiUrl, metric, selectedId, pollNonce]);
+
+  // Settle pending commands whenever fresh data arrives: confirmed ones just disappear (the
+  // new state is already on screen); the ones the device never answered turn into an error.
+  useEffect(() => {
+    if (Object.keys(pendingRef.current).length === 0) return;
+    const result = resolvePending(pendingRef.current, overview.devices, Date.now());
+    if (result.pending === pendingRef.current) return;
+    setPending(result.pending);
+    if (result.timedOut.length > 0) {
+      setCommandErrors((prev) => ({
+        ...prev,
+        ...Object.fromEntries(result.timedOut.map((p) => [p.deviceId, TIMEOUT_MESSAGE])),
+      }));
+    }
+  }, [overview, now]);
+
+  const issueCommand = useCallback(
+    async (device: DeviceOverview, command: Command) => {
+      setCommandErrors(({ [device.id]: _cleared, ...rest }) => rest);
+      setSending((prev) => ({ ...prev, [device.id]: true }));
+      try {
+        const sent = await sendCommand(apiUrl, device.id, command);
+        setPending((prev) => ({
+          ...prev,
+          [device.id]: {
+            commandId: sent.id,
+            deviceId: device.id,
+            command,
+            sentAt: Date.now(),
+          },
+        }));
+        setPollNonce((n) => n + 1);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Command failed';
+        setCommandErrors((prev) => ({ ...prev, [device.id]: message }));
+      } finally {
+        setSending((prev) => ({ ...prev, [device.id]: false }));
+      }
+    },
+    [apiUrl],
+  );
 
   const select = useCallback((id: string) => {
     if (id === selectedRef.current) return;
@@ -174,6 +235,52 @@ export default function Dashboard({ metric, apiUrl }: Props) {
 
       <section className="devices" aria-label="Devices">
         {overview.devices.map((d) => {
+          if (isActuator(d.type)) {
+            const waiting = Boolean(pending[d.id]) || Boolean(sending[d.id]);
+            const error = commandErrors[d.id];
+            const label = stateLabel(d);
+            return (
+              <div key={d.id} className="device actuator" data-state={label.toLowerCase()}>
+                <span className="device-top">
+                  <span className="device-name">{d.name}</span>
+                  <span className="type-tag">{d.type}</span>
+                </span>
+                <span className="device-value">{waiting ? '…' : label}</span>
+                <span className="device-meta">
+                  {d.id}
+                  {d.location ? ` · ${d.location}` : ''}
+                  {d.state && !waiting ? ` · changed ${timeLabel(Date.parse(d.state.ts))}` : ''}
+                  {waiting ? ' · waiting for the device…' : ''}
+                </span>
+                <span className="controls">
+                  <button
+                    type="button"
+                    className="btn"
+                    aria-pressed={d.state?.value === 'on'}
+                    disabled={waiting}
+                    onClick={() => void issueCommand(d, 'on')}
+                  >
+                    Turn on
+                  </button>
+                  <button
+                    type="button"
+                    className="btn"
+                    aria-pressed={d.state?.value === 'off'}
+                    disabled={waiting}
+                    onClick={() => void issueCommand(d, 'off')}
+                  >
+                    Turn off
+                  </button>
+                </span>
+                {error ? (
+                  <span className="command-error" role="alert">
+                    {error}
+                  </span>
+                ) : null}
+              </div>
+            );
+          }
+
           const status: FeedStatus = now === null ? 'no-data' : feedStatus(d.latest?.ts, clock);
           return (
             <button
